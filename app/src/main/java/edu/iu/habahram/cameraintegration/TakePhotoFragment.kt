@@ -1,21 +1,24 @@
 package edu.iu.habahram.cameraintegration
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.FileProvider
+import androidx.camera.core.ImageCapture
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import com.bumptech.glide.Glide
 import edu.iu.habahram.cameraintegration.databinding.FragmentTakePhotoBinding
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * A simple [Fragment] subclass.
@@ -27,6 +30,31 @@ class TakePhotoFragment : Fragment() {
     val TAG = "TakePhotoFragment"
     private var _binding: FragmentTakePhotoBinding? = null
     private val binding get() = _binding!!
+    private var imageCapture: ImageCapture? = null
+
+    private var videoCapture: VideoCapture<Recorder>? = null
+    private var recording: Recording? = null
+
+    private lateinit var cameraExecutor: ExecutorService
+
+    private val activityResultLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions())
+        { permissions ->
+            // Handle Permission granted/rejected
+            var permissionGranted = true
+            permissions.entries.forEach {
+                if (it.key in REQUIRED_PERMISSIONS && it.value == false)
+                    permissionGranted = false
+            }
+            if (!permissionGranted) {
+                Toast.makeText(this.requireContext(),
+                    "Permission request denied",
+                    Toast.LENGTH_SHORT).show()
+            } else {
+                startCamera()
+            }
+        }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -35,38 +63,52 @@ class TakePhotoFragment : Fragment() {
         // Inflate the layout for this fragment
         _binding = FragmentTakePhotoBinding.inflate(inflater, container, false)
         val view = binding.root
-        val photoFile = createImageFile()
-        try {
-            uri = FileProvider.getUriForFile(this.requireContext(), "edu.iu.habahram.fileprovider", photoFile)
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Error: ${e.message}")
+
+        // Request camera permissions
+        if (allPermissionsGranted()) {
+            startCamera()
+        } else {
+            requestPermissions()
         }
-        val pickMedia = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-            // Callback is invoked after the user takes a picture or closes the
-            // camera application.
-            if (success) {
-                Log.d(TAG, "Image location : $uri")
-                Glide.with(this.requireContext()).load(uri).into(binding.imageView)
-            } else {
-                Log.e(TAG, "Image not saved.")
-            }
-        }
-        binding.btnTakePicture.setOnClickListener {
-            Log.i(TAG, "Open up the camera application on device")
-            // Launch the camera application
-            pickMedia.launch(uri)
-        }
+
+        // Set up the listeners for take photo and video capture buttons
+        binding.imageCaptureButton.setOnClickListener { takePhoto() }
+        binding.videoCaptureButton.setOnClickListener { captureVideo() }
+
+        cameraExecutor = Executors.newSingleThreadExecutor()
         return view
     }
 
-    fun createImageFile() : File {
-        var timestamp = SimpleDateFormat("yyyyMMdd_HHmmss")
-            .format(Date())
-        val imageDirectory = this.context?.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-        return File.createTempFile("file_${timestamp}"
-            , ".jpg"
-            , imageDirectory)
+    private fun takePhoto() {}
+
+    private fun captureVideo() {}
+
+    private fun startCamera() {}
+
+    private fun requestPermissions() {
+        activityResultLauncher.launch(REQUIRED_PERMISSIONS)
+    }
+
+    private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
+        ContextCompat.checkSelfPermission(
+            this.requireContext(), it) == PackageManager.PERMISSION_GRANTED
+    }
+    override fun onDestroy() {
+        super.onDestroy()
+        cameraExecutor.shutdown()
+    }
+    companion object {
+        private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
+        private val REQUIRED_PERMISSIONS =
+            mutableListOf (
+                Manifest.permission.CAMERA,
+                Manifest.permission.RECORD_AUDIO
+            ).apply {
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                    add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
+            }.toTypedArray()
     }
 
 
